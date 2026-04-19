@@ -1,6 +1,21 @@
 import { useState, useEffect, useRef } from "react";
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, onValue, set } from "firebase/database";
 
-// ── 상수 ──────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyAOc3ETEZ1iBrN1CJxPZT01_cDFJSrrZG4",
+  authDomain: "ha-time.firebaseapp.com",
+  projectId: "ha-time",
+  storageBucket: "ha-time.firebasestorage.app",
+  messagingSenderId: "649847033571",
+  appId: "1:649847033571:web:b490da0514b86e3f053fd6",
+  databaseURL: "https://ha-time-default-rtdb.firebaseio.com",
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getDatabase(firebaseApp);
+const fbSet = (path, val) => set(ref(db, path), val);
+
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const SLOT_H = 52;
 
@@ -40,17 +55,6 @@ const getMonthGrid = (date) => {
   return cells;
 };
 
-// ── Storage ───────────────────────────────────────
-const storage = {
-  async get(key) {
-    try { const r = await window.storage.get(key, true); return r?.value ? JSON.parse(r.value) : null; } catch { return null; }
-  },
-  async set(key, val) {
-    try { await window.storage.set(key, JSON.stringify(val), true); } catch {}
-  },
-};
-
-// ── Main App ──────────────────────────────────────
 export default function App() {
   const [view, setView] = useState("week");
   const [cur, setCur] = useState(new Date());
@@ -67,30 +71,27 @@ export default function App() {
   const todayKey = toKey(new Date());
 
   useEffect(() => {
-    (async () => {
-      const [ev, mb, pt] = await Promise.all([
-        storage.get("cs_events"),
-        storage.get("cs_members"),
-        storage.get("cs_patient"),
-      ]);
-      if (ev) setEvents(ev);
-      if (mb) setMembers(mb);
-      if (pt) setPatient(pt);
-      setLoading(false);
-    })();
+    let done = 0;
+    const check = () => { done++; if (done >= 3) setLoading(false); };
+    const u1 = onValue(ref(db,"care2/events"), s => { if(s.val()) setEvents(s.val()); check(); });
+    const u2 = onValue(ref(db,"care2/members"), s => { if(s.val()) setMembers(s.val()); check(); });
+    const u3 = onValue(ref(db,"care2/patient"), s => { if(s.val()) setPatient(s.val()); check(); });
+    setTimeout(() => setLoading(false), 3000);
+    return () => { u1(); u2(); u3(); };
   }, []);
 
   const persist = async (key, val) => {
     setSyncing(true);
-    await storage.set(key, val);
+    try { await fbSet(`care2/${key}`, val); } catch {}
     setSyncing(false);
   };
 
   const getC = (ci) => PALETTE[ci % PALETTE.length];
+
   const dayEvents = (dk) => {
     const ev = events[dk];
     if (!ev) return [];
-    return Object.entries(ev).map(([id, e]) => ({ id, ...e })).sort((a,b) => a.startH - b.startH);
+    return Object.entries(ev).map(([id,e]) => ({id,...e})).sort((a,b) => a.startH - b.startH);
   };
 
   const saveEvent = async (dateKey, eventId, data) => {
@@ -98,7 +99,7 @@ export default function App() {
     if (!ne[dateKey]) ne[dateKey] = {};
     ne[dateKey][eventId] = data;
     setEvents(ne);
-    await persist("cs_events", ne);
+    await persist("events", ne);
   };
 
   const deleteEvent = async (dateKey, eventId) => {
@@ -108,17 +109,17 @@ export default function App() {
       if (!Object.keys(ne[dateKey]).length) delete ne[dateKey];
     }
     setEvents(ne);
-    await persist("cs_events", ne);
+    await persist("events", ne);
   };
 
   const addMember = async (name) => {
-    const nm = [...members, { id:`m${Date.now()}`, name, ci:members.length%PALETTE.length }];
-    setMembers(nm); await persist("cs_members", nm);
+    const nm = [...members, {id:`m${Date.now()}`,name,ci:members.length%PALETTE.length}];
+    setMembers(nm); await persist("members", nm);
   };
 
   const removeMember = async (id) => {
     const nm = members.filter(m => m.id !== id);
-    setMembers(nm); await persist("cs_members", nm);
+    setMembers(nm); await persist("members", nm);
   };
 
   const getStats = () => {
@@ -147,7 +148,7 @@ export default function App() {
       const wk=getWeekDates(cur); const s=wk[0], e=wk[6];
       return s.getMonth()===e.getMonth()
         ? `${s.getFullYear()}년 ${s.getMonth()+1}월 ${s.getDate()}–${e.getDate()}일`
-        : `${s.getMonth()+1}월 ${s.getDate()}일 – ${e.getMonth()+1}월 ${e.getDate()}일`;
+        : `${s.getMonth()+1}/${s.getDate()} – ${e.getMonth()+1}/${e.getDate()}`;
     }
     return `${cur.getFullYear()}년 ${cur.getMonth()+1}월`;
   };
@@ -155,45 +156,47 @@ export default function App() {
   const stats = getStats();
 
   if (loading) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:300,flexDirection:"column",gap:12,color:"#aaa",fontFamily:"system-ui"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",flexDirection:"column",gap:12,color:"#888",background:"#fff"}}>
       <div style={{width:24,height:24,border:"2.5px solid #eee",borderTop:"2.5px solid #1D9E75",borderRadius:"50%",animation:"spin .8s linear infinite"}}/>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      불러오는 중…
+      <span style={{fontSize:14,color:"#999"}}>불러오는 중…</span>
     </div>
   );
 
   return (
-    <div style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif",background:"#fff",color:"#111"}}>
+    <div style={{fontFamily:"'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif",background:"#fff",color:"#111",minHeight:"100vh"}}>
       <style>{`
         *{box-sizing:border-box}
+        body{background:#fff!important;color:#111!important}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
         .cell-h:hover{background:rgba(29,158,117,0.06)!important;cursor:pointer}
         .ev-h:hover{filter:brightness(.93);cursor:pointer}
         .mo-cell:hover{background:#f7fffe!important;cursor:pointer}
         button,select{font-family:inherit;cursor:pointer}
-        input,textarea{font-family:inherit;color:#111;-webkit-text-fill-color:#111}
-        select option{color:#111;background:#fff}
+        input,textarea,select{
+          font-family:inherit;
+          color:#111!important;
+          -webkit-text-fill-color:#111!important;
+          background:#fff!important;
+        }
+        select option{color:#111!important;background:#fff!important}
+        textarea{color:#111!important;-webkit-text-fill-color:#111!important;background:#f8f8f8!important}
       `}</style>
 
       {/* ─── Top Bar ─── */}
-      <div style={{borderBottom:"1px solid #eee",padding:"0 14px",background:"#fff"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:52,gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:18}}>🏥</span>
-            <div>
-              <div style={{fontSize:10,color:"#1D9E75",fontWeight:700,letterSpacing:"0.06em"}}>간병 스케줄</div>
-              <div style={{fontSize:14,fontWeight:800,lineHeight:1}}>{patient}님</div>
+      <div style={{borderBottom:"1px solid #eee",padding:"0 12px",background:"#fff",position:"sticky",top:0,zIndex:100}}>
+        {/* Row 1: 로고 + 버튼들 */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:48,gap:6}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+            <span style={{fontSize:16,flexShrink:0}}>🏥</span>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:9,color:"#1D9E75",fontWeight:700,letterSpacing:"0.05em",whiteSpace:"nowrap"}}>간병 스케줄</div>
+              <div style={{fontSize:13,fontWeight:800,lineHeight:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{patient}님</div>
             </div>
           </div>
 
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
-            <button onClick={()=>nav(-1)} style={{width:28,height:28,border:"1px solid #eee",borderRadius:7,background:"#fff",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>‹</button>
-            <span style={{fontSize:13,fontWeight:700,minWidth:150,textAlign:"center"}}>{navTitle()}</span>
-            <button onClick={()=>nav(1)} style={{width:28,height:28,border:"1px solid #eee",borderRadius:7,background:"#fff",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center"}}>›</button>
-          </div>
-
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
             <div style={{display:"flex",background:"#f4f4f4",borderRadius:8,padding:2,gap:1}}>
               {["week","month"].map(v=>(
                 <button key={v} onClick={()=>setView(v)} style={{padding:"4px 10px",fontSize:12,border:"none",borderRadius:6,background:view===v?"#fff":"transparent",fontWeight:view===v?700:400,color:view===v?"#111":"#999",boxShadow:view===v?"0 1px 3px rgba(0,0,0,.1)":"none"}}>
@@ -201,23 +204,30 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <button onClick={()=>setCur(new Date())} style={{padding:"4px 10px",fontSize:12,border:"1px solid #eee",borderRadius:7,background:"#fff",color:"#666"}}>오늘</button>
-            <button onClick={()=>setSettingsOpen(true)} style={{width:28,height:28,border:"1px solid #eee",borderRadius:7,background:"#fff",fontSize:14}}>⚙</button>
+            <button onClick={()=>setCur(new Date())} style={{padding:"4px 8px",fontSize:11,border:"1px solid #eee",borderRadius:7,background:"#fff",color:"#666"}}>오늘</button>
+            <button onClick={()=>setSettingsOpen(true)} style={{width:28,height:28,border:"1px solid #eee",borderRadius:7,background:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>⚙</button>
           </div>
         </div>
 
-        {/* Member pills */}
-        <div style={{display:"flex",gap:6,paddingBottom:8,overflowX:"auto"}}>
-          <div style={{fontSize:11,color:"#bbb",display:"flex",alignItems:"center",gap:3,marginRight:2,flexShrink:0}}>
+        {/* Row 2: 날짜 네비게이션 */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,paddingBottom:6}}>
+          <button onClick={()=>nav(-1)} style={{width:26,height:26,border:"1px solid #eee",borderRadius:6,background:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>‹</button>
+          <span style={{fontSize:13,fontWeight:700,color:"#222",minWidth:0,textAlign:"center"}}>{navTitle()}</span>
+          <button onClick={()=>nav(1)} style={{width:26,height:26,border:"1px solid #eee",borderRadius:6,background:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>›</button>
+        </div>
+
+        {/* Row 3: 멤버 Pills */}
+        <div style={{display:"flex",gap:5,paddingBottom:7,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <div style={{fontSize:10,color:syncing?"#f59e0b":"#1D9E75",display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:syncing?"#f59e0b":"#1D9E75"}}/>
             {syncing?"저장":"공유"}
           </div>
           {members.map(m => {
             const c=getC(m.ci);
             return (
-              <div key={m.id} style={{display:"flex",alignItems:"center",gap:5,padding:"3px 10px",borderRadius:20,background:c.bg,border:`1px solid ${c.border}`,flexShrink:0}}>
+              <div key={m.id} style={{display:"flex",alignItems:"center",gap:4,padding:"3px 9px",borderRadius:20,background:c.bg,border:`1px solid ${c.border}`,flexShrink:0}}>
                 <div style={{width:6,height:6,borderRadius:"50%",background:c.pill}}/>
-                <span style={{fontSize:12,fontWeight:700,color:c.text}}>{m.name}</span>
+                <span style={{fontSize:11,fontWeight:700,color:c.text}}>{m.name}</span>
                 <span style={{fontSize:10,color:c.text,opacity:0.6}}>{stats[m.id]?.month||0}회</span>
               </div>
             );
@@ -235,7 +245,6 @@ export default function App() {
             onEventClick={(dk,ev)=>setModal({type:"edit",dateKey:dk,event:ev})}/>
       }
 
-      {/* ─── Modals ─── */}
       {modal && (
         <EventModal modal={modal} members={members} getC={getC}
           onSave={async(dk,eid,data)=>{await saveEvent(dk,eid,data);setModal(null);}}
@@ -245,32 +254,28 @@ export default function App() {
       {settingsOpen && (
         <SettingsModal members={members} patient={patient} stats={stats} getC={getC}
           onAddMember={addMember} onRemoveMember={removeMember}
-          onPatientSave={async p=>{setPatient(p);await persist("cs_patient",p);}}
+          onPatientSave={async p=>{setPatient(p);await persist("patient",p);}}
           onClose={()=>setSettingsOpen(false)}/>
       )}
     </div>
   );
 }
 
-// ─── Week View ────────────────────────────────────
 function WeekView({dates, todayKey, dayEvents, members, getC, onCellClick, onEventClick}) {
   const scrollRef = useRef(null);
-  useEffect(()=>{
-    if(scrollRef.current) scrollRef.current.scrollTop = 7*SLOT_H;
-  },[]);
+  useEffect(()=>{ if(scrollRef.current) scrollRef.current.scrollTop = 7*SLOT_H; },[]);
 
   return (
     <div style={{display:"flex",flexDirection:"column"}}>
-      {/* Day headers */}
-      <div style={{display:"flex",borderBottom:"1px solid #eee",background:"#fff",position:"sticky",top:0,zIndex:20}}>
-        <div style={{width:44,flexShrink:0}}/>
+      <div style={{display:"flex",borderBottom:"1px solid #eee",background:"#fff",position:"sticky",top:130,zIndex:20}}>
+        <div style={{width:40,flexShrink:0}}/>
         {dates.map((date,i)=>{
           const dk=toKey(date); const isToday=dk===todayKey;
           const isSun=i===0, isSat=i===6;
           return (
-            <div key={i} style={{flex:1,textAlign:"center",padding:"7px 0 5px"}}>
-              <div style={{fontSize:10,fontWeight:600,color:isSun?"#E24B4A":isSat?"#378ADD":"#bbb",marginBottom:3}}>{DAYS[date.getDay()]}</div>
-              <div style={{width:28,height:28,margin:"0 auto",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,background:isToday?"#1D9E75":"transparent",color:isToday?"#fff":isSun?"#E24B4A":isSat?"#378ADD":"#222"}}>
+            <div key={i} style={{flex:1,textAlign:"center",padding:"6px 0 4px"}}>
+              <div style={{fontSize:9,fontWeight:600,color:isSun?"#E24B4A":isSat?"#378ADD":"#bbb",marginBottom:2}}>{DAYS[date.getDay()]}</div>
+              <div style={{width:26,height:26,margin:"0 auto",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,background:isToday?"#1D9E75":"transparent",color:isToday?"#fff":isSun?"#E24B4A":isSat?"#378ADD":"#222"}}>
                 {date.getDate()}
               </div>
             </div>
@@ -278,19 +283,16 @@ function WeekView({dates, todayKey, dayEvents, members, getC, onCellClick, onEve
         })}
       </div>
 
-      {/* Scrollable grid */}
-      <div ref={scrollRef} style={{overflowY:"auto",maxHeight:"calc(100vh - 160px)"}}>
+      <div ref={scrollRef} style={{overflowY:"auto",maxHeight:"calc(100vh - 190px)",WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",position:"relative"}}>
-          {/* Hour labels */}
-          <div style={{width:44,flexShrink:0}}>
+          <div style={{width:40,flexShrink:0}}>
             {HOURS.map(h=>(
-              <div key={h} style={{height:SLOT_H,display:"flex",alignItems:"flex-start",justifyContent:"flex-end",paddingRight:6,paddingTop:2}}>
-                <span style={{fontSize:9,color:"#ccc",fontWeight:500}}>{h===0?"":hm(h)}</span>
+              <div key={h} style={{height:SLOT_H,display:"flex",alignItems:"flex-start",justifyContent:"flex-end",paddingRight:5,paddingTop:2}}>
+                <span style={{fontSize:9,color:"#bbb",fontWeight:500}}>{h===0?"":hm(h)}</span>
               </div>
             ))}
           </div>
 
-          {/* Columns */}
           {dates.map((date,di)=>{
             const dk=toKey(date); const isToday=dk===todayKey;
             const evs=dayEvents(dk);
@@ -312,9 +314,9 @@ function WeekView({dates, todayKey, dayEvents, members, getC, onCellClick, onEve
                     <div key={ev.id} className="ev-h" onClick={e=>{e.stopPropagation();onEventClick(dk,ev);}}
                       style={{position:"absolute",top,left:2,right:2,height,background:c.bg,border:`1.5px solid ${c.border}`,borderRadius:6,padding:"3px 5px",overflow:"hidden",animation:"fadeUp .15s ease",zIndex:10}}>
                       <div style={{fontSize:11,fontWeight:800,color:c.pill,lineHeight:1.2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{member.name}</div>
-                      {height>34 && <div style={{fontSize:9,color:c.text,opacity:0.7}}>{hm(ev.startH)}–{hm(ev.endH)}</div>}
+                      {height>34 && <div style={{fontSize:9,color:c.text}}>{hm(ev.startH)}–{hm(ev.endH)}</div>}
                       {height>50 && ev.roles?.slice(0,2).map(r=>(
-                        <div key={r} style={{fontSize:9,color:c.text,opacity:0.6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>• {r}</div>
+                        <div key={r} style={{fontSize:9,color:c.text,opacity:0.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>• {r}</div>
                       ))}
                     </div>
                   );
@@ -328,15 +330,14 @@ function WeekView({dates, todayKey, dayEvents, members, getC, onCellClick, onEve
   );
 }
 
-// ─── Month View ───────────────────────────────────
 function MonthView({grid, todayKey, dayEvents, members, getC, onDayClick, onEventClick}) {
   const weeks=[];
   for(let i=0;i<grid.length;i+=7) weeks.push(grid.slice(i,i+7));
   return (
-    <div style={{border:"1px solid #eee",borderRadius:10,overflow:"hidden",margin:"12px 14px"}}>
+    <div style={{border:"1px solid #eee",borderRadius:10,overflow:"hidden",margin:"10px 12px"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",background:"#fafafa",borderBottom:"1px solid #eee"}}>
         {DAYS.map((d,i)=>(
-          <div key={d} style={{textAlign:"center",padding:"7px 0",fontSize:11,fontWeight:700,color:i===0?"#E24B4A":i===6?"#378ADD":"#999"}}>{d}</div>
+          <div key={d} style={{textAlign:"center",padding:"6px 0",fontSize:11,fontWeight:700,color:i===0?"#E24B4A":i===6?"#378ADD":"#999"}}>{d}</div>
         ))}
       </div>
       {weeks.map((week,wi)=>(
@@ -346,21 +347,21 @@ function MonthView({grid, todayKey, dayEvents, members, getC, onDayClick, onEven
             const evs=dayEvents(dk); const isSun=di===0, isSat=di===6;
             return (
               <div key={di} className="mo-cell" onClick={()=>onDayClick(cell.date)}
-                style={{minHeight:86,padding:"5px 4px",borderLeft:di>0?"1px solid #eee":"none",background:isToday?"#f0fdf7":!cell.cur?"#fafafa":"#fff"}}>
-                <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:isToday?800:400,background:isToday?"#1D9E75":"transparent",color:isToday?"#fff":!cell.cur?"#ccc":isSun?"#E24B4A":isSat?"#378ADD":"#333",marginBottom:3}}>
+                style={{minHeight:80,padding:"5px 3px",borderLeft:di>0?"1px solid #eee":"none",background:isToday?"#f0fdf7":!cell.cur?"#fafafa":"#fff"}}>
+                <div style={{width:22,height:22,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:isToday?800:400,background:isToday?"#1D9E75":"transparent",color:isToday?"#fff":!cell.cur?"#ccc":isSun?"#E24B4A":isSat?"#378ADD":"#333",marginBottom:2}}>
                   {cell.date.getDate()}
                 </div>
-                {evs.slice(0,3).map(ev=>{
+                {evs.slice(0,2).map(ev=>{
                   const member=members.find(m=>m.id===ev.memberId); if(!member) return null;
                   const c=getC(member.ci);
                   return (
                     <div key={ev.id} onClick={e=>{e.stopPropagation();onEventClick(dk,ev);}}
-                      style={{fontSize:10,fontWeight:700,padding:"2px 4px",borderRadius:4,background:c.bg,color:c.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      style={{fontSize:9,fontWeight:700,padding:"2px 3px",borderRadius:3,background:c.bg,color:c.text,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                       {hm(ev.startH)} {member.name}
                     </div>
                   );
                 })}
-                {evs.length>3 && <div style={{fontSize:9,color:"#bbb"}}>+{evs.length-3}</div>}
+                {evs.length>2 && <div style={{fontSize:9,color:"#bbb"}}>+{evs.length-2}</div>}
               </div>
             );
           })}
@@ -370,7 +371,6 @@ function MonthView({grid, todayKey, dayEvents, members, getC, onDayClick, onEven
   );
 }
 
-// ─── Event Modal ──────────────────────────────────
 function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
   const isEdit=modal.type==="edit";
   const ev=modal.event;
@@ -392,34 +392,32 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
   };
 
   return (
-    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,0.42)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0 0 0 0"}}>
-      <div style={{background:"#fff",borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",animation:"fadeUp .2s ease"}}>
-        {/* Handle */}
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,0.42)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:"#fff",borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",WebkitOverflowScrolling:"touch",animation:"fadeUp .2s ease"}}>
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0"}}>
           <div style={{width:36,height:4,borderRadius:2,background:"#e0e0e0"}}/>
         </div>
 
-        {/* Header */}
         <div style={{padding:"12px 18px 10px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
-            <div style={{fontSize:11,color:"#aaa",marginBottom:1}}>{dateStr}</div>
-            <div style={{fontSize:17,fontWeight:800}}>{isEdit?"간병 수정":"간병 추가"}</div>
+            <div style={{fontSize:11,color:"#999",marginBottom:1}}>{dateStr}</div>
+            <div style={{fontSize:17,fontWeight:800,color:"#111"}}>{isEdit?"간병 수정":"간병 추가"}</div>
           </div>
-          <button onClick={onClose} style={{width:28,height:28,border:"1px solid #eee",borderRadius:"50%",background:"#f8f8f8",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          <button onClick={onClose} style={{width:28,height:28,border:"1px solid #eee",borderRadius:"50%",background:"#f8f8f8",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>✕</button>
         </div>
 
-        <div style={{padding:"14px 18px 24px"}}>
+        <div style={{padding:"14px 18px 32px"}}>
           {/* 담당자 */}
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>담당자</div>
+            <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>담당자</div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               {members.map(m=>{
                 const c=getC(m.ci); const sel=memberId===m.id;
                 return (
                   <div key={m.id} onClick={()=>setMemberId(m.id)}
-                    style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,border:`2px solid ${sel?c.border:"#eee"}`,background:sel?c.bg:"#fff",cursor:"pointer",transition:"all .12s"}}>
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,border:`2px solid ${sel?c.border:"#eee"}`,background:sel?c.bg:"#fff",cursor:"pointer"}}>
                     <div style={{width:10,height:10,borderRadius:"50%",background:sel?c.pill:"#ddd",flexShrink:0}}/>
-                    <span style={{fontSize:14,fontWeight:700,color:sel?c.text:"#555"}}>{m.name}</span>
+                    <span style={{fontSize:14,fontWeight:700,color:sel?c.text:"#444"}}>{m.name}</span>
                     {sel && <span style={{marginLeft:"auto",fontSize:16,color:c.pill}}>✓</span>}
                   </div>
                 );
@@ -429,22 +427,22 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
 
           {/* 시간 */}
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>시간</div>
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"#f8f8f8",borderRadius:12,padding:"10px 14px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>시간</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"#f4f4f4",borderRadius:12,padding:"10px 14px"}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:10,color:"#bbb",marginBottom:2}}>시작</div>
+                <div style={{fontSize:10,color:"#888",marginBottom:3}}>시작</div>
                 <select value={startH} onChange={e=>{const v=Number(e.target.value);setStartH(v);if(endH<=v)setEndH(v+1);}}
-                  style={{width:"100%",border:"none",background:"transparent",fontSize:16,fontWeight:700,color:"#111",WebkitTextFillColor:"#111",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
-                  {HOURS.map(h=><option key={h} value={h}>{hm(h)}</option>)}
+                  style={{width:"100%",border:"none",background:"transparent",fontSize:16,fontWeight:700,color:"#111",WebkitTextFillColor:"#111",outline:"none",appearance:"none",WebkitAppearance:"none",cursor:"pointer"}}>
+                  {HOURS.map(h=><option key={h} value={h} style={{color:"#111",background:"#fff"}}>{hm(h)}</option>)}
                 </select>
               </div>
-              <div style={{color:"#ddd",fontSize:18,fontWeight:300}}>→</div>
+              <div style={{color:"#ccc",fontSize:18}}>→</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:10,color:"#bbb",marginBottom:2}}>종료</div>
+                <div style={{fontSize:10,color:"#888",marginBottom:3}}>종료</div>
                 <select value={endH} onChange={e=>setEndH(Number(e.target.value))}
-                  style={{width:"100%",border:"none",background:"transparent",fontSize:16,fontWeight:700,color:"#111",WebkitTextFillColor:"#111",outline:"none",appearance:"none",WebkitAppearance:"none"}}>
-                  {HOURS.filter(h=>h>startH).map(h=><option key={h} value={h}>{hm(h)}</option>)}
-                  <option value={24}>24:00</option>
+                  style={{width:"100%",border:"none",background:"transparent",fontSize:16,fontWeight:700,color:"#111",WebkitTextFillColor:"#111",outline:"none",appearance:"none",WebkitAppearance:"none",cursor:"pointer"}}>
+                  {HOURS.filter(h=>h>startH).map(h=><option key={h} value={h} style={{color:"#111",background:"#fff"}}>{hm(h)}</option>)}
+                  <option value={24} style={{color:"#111",background:"#fff"}}>24:00</option>
                 </select>
               </div>
               <div style={{padding:"4px 8px",background:"#1D9E75",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{endH-startH}시간</div>
@@ -453,13 +451,13 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
 
           {/* 주요 역할 */}
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>주요 역할</div>
+            <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>주요 역할</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
               {ROLE_PRESETS.map(r=>{
                 const sel=roles.includes(r);
                 return (
                   <div key={r} onClick={()=>toggleRole(r)}
-                    style={{padding:"6px 12px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",background:sel?"#1D9E75":"#f4f4f4",color:sel?"#fff":"#666",border:`1.5px solid ${sel?"#1D9E75":"transparent"}`,transition:"all .12s"}}>
+                    style={{padding:"6px 12px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",background:sel?"#1D9E75":"#f4f4f4",color:sel?"#fff":"#555",border:`1.5px solid ${sel?"#1D9E75":"transparent"}`}}>
                     {r}
                   </div>
                 );
@@ -469,9 +467,9 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
               <input value={customRole} onChange={e=>setCustomRole(e.target.value)}
                 onKeyDown={e=>{if(e.key==="Enter"&&customRole.trim()){toggleRole(customRole.trim());setCustomRole("");}}}
                 placeholder="직접 입력 후 Enter…"
-                style={{flex:1,padding:"7px 11px",border:"1px dashed #ddd",borderRadius:9,fontSize:13,outline:"none",background:"#fafafa"}}/>
+                style={{flex:1,padding:"7px 11px",border:"1px dashed #ddd",borderRadius:9,fontSize:13,outline:"none",background:"#f8f8f8",color:"#111",WebkitTextFillColor:"#111"}}/>
               <button onClick={()=>{if(customRole.trim()){toggleRole(customRole.trim());setCustomRole("");}}}
-                style={{padding:"7px 12px",border:"1px solid #eee",borderRadius:9,background:"#fff",fontSize:12,color:"#666"}}>추가</button>
+                style={{padding:"7px 12px",border:"1px solid #eee",borderRadius:9,background:"#fff",fontSize:12,color:"#555"}}>추가</button>
             </div>
             {roles.length>0 && (
               <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
@@ -487,10 +485,10 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
 
           {/* 메모 */}
           <div style={{marginBottom:18}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#888",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>메모 / 인수인계</div>
+            <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>메모 / 인수인계</div>
             <textarea value={note} onChange={e=>setNote(e.target.value)}
               placeholder="투약 정보, 주의사항, 다음 교대에 전달할 내용…"
-              rows={3} style={{width:"100%",padding:"10px 12px",border:"1.5px solid #eee",borderRadius:10,fontSize:13,resize:"vertical",outline:"none",lineHeight:1.6,color:"#111"}}/>
+              rows={3} style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e0e0e0",borderRadius:10,fontSize:13,resize:"vertical",outline:"none",lineHeight:1.6,color:"#111",WebkitTextFillColor:"#111",background:"#f8f8f8"}}/>
           </div>
 
           {/* Buttons */}
@@ -499,7 +497,7 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
               <button onClick={()=>onDelete(modal.dateKey,ev.id)}
                 style={{padding:"11px 14px",fontSize:13,border:"none",borderRadius:10,background:"#FFF0F0",color:"#c0392b",fontWeight:700}}>삭제</button>
             )}
-            <button onClick={onClose} style={{flex:1,padding:"11px",fontSize:13,border:"1px solid #eee",borderRadius:10,background:"#fff",color:"#666"}}>취소</button>
+            <button onClick={onClose} style={{flex:1,padding:"11px",fontSize:13,border:"1px solid #eee",borderRadius:10,background:"#fff",color:"#555"}}>취소</button>
             <button onClick={handleSave} disabled={!memberId}
               style={{flex:2,padding:"11px",fontSize:14,border:"none",borderRadius:10,background:memberId?"#1D9E75":"#ddd",color:"#fff",fontWeight:700}}>저장</button>
           </div>
@@ -509,7 +507,6 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
   );
 }
 
-// ─── Settings Modal ───────────────────────────────
 function SettingsModal({members, patient, stats, getC, onAddMember, onRemoveMember, onPatientSave, onClose}) {
   const [tab,setTab]=useState("members");
   const [name,setName]=useState("");
@@ -517,13 +514,13 @@ function SettingsModal({members, patient, stats, getC, onAddMember, onRemoveMemb
 
   return (
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,zIndex:500,background:"rgba(0,0,0,0.42)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-      <div style={{background:"#fff",borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"85vh",overflowY:"auto",animation:"fadeUp .2s ease"}}>
+      <div style={{background:"#fff",borderRadius:"18px 18px 0 0",width:"100%",maxWidth:520,maxHeight:"85vh",overflowY:"auto",WebkitOverflowScrolling:"touch",animation:"fadeUp .2s ease"}}>
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0"}}>
           <div style={{width:36,height:4,borderRadius:2,background:"#e0e0e0"}}/>
         </div>
         <div style={{padding:"12px 18px 0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{fontSize:17,fontWeight:800}}>설정</div>
-          <button onClick={onClose} style={{width:28,height:28,border:"1px solid #eee",borderRadius:"50%",background:"#f8f8f8",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          <div style={{fontSize:17,fontWeight:800,color:"#111"}}>설정</div>
+          <button onClick={onClose} style={{width:28,height:28,border:"1px solid #eee",borderRadius:"50%",background:"#f8f8f8",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>✕</button>
         </div>
         <div style={{display:"flex",margin:"10px 18px 0",borderBottom:"1px solid #eee"}}>
           {["members","info"].map(t=>(
@@ -532,7 +529,7 @@ function SettingsModal({members, patient, stats, getC, onAddMember, onRemoveMemb
             </button>
           ))}
         </div>
-        <div style={{padding:"16px 18px 32px"}}>
+        <div style={{padding:"16px 18px 40px"}}>
           {tab==="members" && (
             <>
               <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
@@ -545,14 +542,16 @@ function SettingsModal({members, patient, stats, getC, onAddMember, onRemoveMemb
                         <div style={{fontSize:14,fontWeight:700,color:c.text}}>{m.name}</div>
                         <div style={{fontSize:11,color:c.text,opacity:0.6}}>이번달 {st?.month||0}회 · 총 {st?.total||0}회</div>
                       </div>
-                      <button onClick={()=>onRemoveMember(m.id)} style={{padding:"3px 9px",border:"1px solid #ddd",borderRadius:7,background:"#fff",fontSize:12,color:"#bbb"}}>삭제</button>
+                      <button onClick={()=>onRemoveMember(m.id)} style={{padding:"3px 9px",border:"1px solid #ddd",borderRadius:7,background:"#fff",fontSize:12,color:"#999"}}>삭제</button>
                     </div>
                   );
                 })}
               </div>
               <div style={{display:"flex",gap:8}}>
-                <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&name.trim()&&(onAddMember(name.trim()),setName(""))}
-                  placeholder="이름 입력 후 Enter" style={{flex:1,padding:"9px 12px",border:"1.5px solid #eee",borderRadius:10,fontSize:14,outline:"none"}}/>
+                <input value={name} onChange={e=>setName(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&name.trim()&&(onAddMember(name.trim()),setName(""))}
+                  placeholder="이름 입력 후 Enter"
+                  style={{flex:1,padding:"9px 12px",border:"1.5px solid #eee",borderRadius:10,fontSize:14,outline:"none",color:"#111",WebkitTextFillColor:"#111",background:"#fff"}}/>
                 <button onClick={()=>{if(name.trim()){onAddMember(name.trim());setName("");}}}
                   style={{padding:"9px 16px",border:"none",borderRadius:10,background:"#1D9E75",color:"#fff",fontSize:13,fontWeight:700}}>추가</button>
               </div>
@@ -563,9 +562,10 @@ function SettingsModal({members, patient, stats, getC, onAddMember, onRemoveMemb
               <div style={{marginBottom:14}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#888",marginBottom:6}}>환자 이름</div>
                 <input value={pat} onChange={e=>setPat(e.target.value)}
-                  style={{width:"100%",padding:"9px 12px",border:"1.5px solid #eee",borderRadius:10,fontSize:14,outline:"none"}}/>
+                  style={{width:"100%",padding:"9px 12px",border:"1.5px solid #eee",borderRadius:10,fontSize:14,outline:"none",color:"#111",WebkitTextFillColor:"#111",background:"#fff"}}/>
               </div>
-              <button onClick={()=>onPatientSave(pat)} style={{width:"100%",padding:"11px",border:"none",borderRadius:10,background:"#1D9E75",color:"#fff",fontSize:14,fontWeight:700}}>저장</button>
+              <button onClick={()=>onPatientSave(pat)}
+                style={{width:"100%",padding:"11px",border:"none",borderRadius:10,background:"#1D9E75",color:"#fff",fontSize:14,fontWeight:700}}>저장</button>
             </>
           )}
         </div>
