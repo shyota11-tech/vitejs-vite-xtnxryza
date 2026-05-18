@@ -74,7 +74,7 @@ export default function App() {
     let done = 0;
     const check = () => { done++; if (done >= 3) setLoading(false); };
     const u1 = onValue(ref(db,"care2/events"), s => { if(s.val()) setEvents(s.val()); check(); });
-    const u2 = onValue(ref(db,"care2/members"), s => { if(s.val()) setMembers(s.val()); check(); });
+    const u2 = onValue(ref(db,"care2/members"), s => { if(s.val()) { const v=s.val(); setMembers(Array.isArray(v)?v:Object.values(v)); } check(); });
     const u3 = onValue(ref(db,"care2/patient"), s => { if(s.val()) setPatient(s.val()); check(); });
     setTimeout(() => setLoading(false), 3000);
     return () => { u1(); u2(); u3(); };
