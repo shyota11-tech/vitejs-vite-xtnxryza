@@ -19,16 +19,24 @@ const fbSet = (path, val) => set(ref(db, path), val);
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const SLOT_H = 52;
 
-// 6명 모두 완전히 다른 색상 (색상 환 전체에 고르게 분포)
+// 선명하되 너무 진하지 않은 다양한 색상 팔레트 (16가지)
 const PALETTE = [
-  { bg: "#E1F5EE", border: "#1D9E75", text: "#085041", pill: "#1D9E75" }, // 초록
-  { bg: "#E6F1FB", border: "#378ADD", text: "#0C447C", pill: "#378ADD" }, // 파랑
-  { bg: "#FAECE7", border: "#D85A30", text: "#712B13", pill: "#D85A30" }, // 주황
-  { bg: "#FBEAF0", border: "#D4537E", text: "#72243E", pill: "#D4537E" }, // 분홍
-  { bg: "#EEEDFE", border: "#7F77DD", text: "#3C3489", pill: "#7F77DD" }, // 보라
-  { bg: "#FAEEDA", border: "#BA7517", text: "#633806", pill: "#BA7517" }, // 황금
-  { bg: "#EAF3DE", border: "#639922", text: "#27500A", pill: "#639922" }, // 연두
-  { bg: "#FDE8E8", border: "#C0392B", text: "#7B1A12", pill: "#C0392B" }, // 빨강
+  { bg: "#D4F0E4", border: "#20A870", text: "#0A5C3A", pill: "#20A870" }, // 에메랄드
+  { bg: "#D0E8FA", border: "#2E86C8", text: "#0A3D6B", pill: "#2E86C8" }, // 스카이블루
+  { bg: "#FFE0D0", border: "#E8622A", text: "#7A2E0E", pill: "#E8622A" }, // 탠저린
+  { bg: "#F8D7E8", border: "#D63678", text: "#7A1040", pill: "#D63678" }, // 핫핑크
+  { bg: "#E4E0FC", border: "#6C5FD4", text: "#32237A", pill: "#6C5FD4" }, // 인디고
+  { bg: "#FFF0C0", border: "#D4A017", text: "#6B4E00", pill: "#D4A017" }, // 골드
+  { bg: "#D8F0D0", border: "#4CA832", text: "#1A5C0A", pill: "#4CA832" }, // 라임
+  { bg: "#FFD8D8", border: "#D43232", text: "#7A0A0A", pill: "#D43232" }, // 레드
+  { bg: "#D0F4F8", border: "#1AABB8", text: "#0A5A60", pill: "#1AABB8" }, // 시안
+  { bg: "#F0D8F8", border: "#A832C8", text: "#580A70", pill: "#A832C8" }, // 바이올렛
+  { bg: "#FFE8C0", border: "#E07820", text: "#7A3A00", pill: "#E07820" }, // 오렌지
+  { bg: "#D8EEF8", border: "#2878C8", text: "#0A3A6A", pill: "#2878C8" }, // 코발트
+  { bg: "#E8F8D8", border: "#78C828", text: "#2E6A00", pill: "#78C828" }, // 옐로우그린
+  { bg: "#F8E8D8", border: "#C87828", text: "#6A3200", pill: "#C87828" }, // 브라운
+  { bg: "#D8F8F0", border: "#28C8A0", text: "#006A4E", pill: "#28C8A0" }, // 민트
+  { bg: "#F8D8F0", border: "#C828A0", text: "#6A004E", pill: "#C828A0" }, // 마젠타
 ];
 
 const ROLE_PRESETS = [
