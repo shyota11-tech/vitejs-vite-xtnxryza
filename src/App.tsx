@@ -19,14 +19,16 @@ const fbSet = (path, val) => set(ref(db, path), val);
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const SLOT_H = 52;
 
+// 6명 모두 완전히 다른 색상
 const PALETTE = [
-  { bg: "#E1F5EE", border: "#1D9E75", text: "#085041", pill: "#1D9E75" },
-  { bg: "#E6F1FB", border: "#378ADD", text: "#0C447C", pill: "#378ADD" },
-  { bg: "#FAECE7", border: "#D85A30", text: "#712B13", pill: "#D85A30" },
-  { bg: "#FBEAF0", border: "#D4537E", text: "#72243E", pill: "#D4537E" },
-  { bg: "#EEEDFE", border: "#7F77DD", text: "#3C3489", pill: "#7F77DD" },
-  { bg: "#FAEEDA", border: "#BA7517", text: "#633806", pill: "#BA7517" },
-  { bg: "#EAF3DE", border: "#639922", text: "#27500A", pill: "#639922" },
+  { bg: "#E1F5EE", border: "#1D9E75", text: "#085041", pill: "#1D9E75" }, // 초록
+  { bg: "#E6F1FB", border: "#378ADD", text: "#0C447C", pill: "#378ADD" }, // 파랑
+  { bg: "#FAECE7", border: "#D85A30", text: "#712B13", pill: "#D85A30" }, // 주황
+  { bg: "#FBEAF0", border: "#D4537E", text: "#72243E", pill: "#D4537E" }, // 분홍
+  { bg: "#EEEDFE", border: "#7F77DD", text: "#3C3489", pill: "#7F77DD" }, // 보라
+  { bg: "#FAEEDA", border: "#BA7517", text: "#633806", pill: "#BA7517" }, // 황금
+  { bg: "#EAF3DE", border: "#639922", text: "#27500A", pill: "#639922" }, // 연두
+  { bg: "#FDE8E8", border: "#C0392B", text: "#7B1A12", pill: "#C0392B" }, // 빨강
 ];
 
 const ROLE_PRESETS = [
@@ -53,6 +55,17 @@ const getMonthGrid = (date) => {
   while(cells.length%7) cells.push({date:new Date(y,m+1,cells.length-first-last+1),cur:false});
   while(cells.length<35) cells.push({date:new Date(y,m+1,cells.length-first-last+1),cur:false});
   return cells;
+};
+
+// 현재 사용 중인 색상을 피해서 다음 색상 인덱스 반환
+const getNextColorIndex = (members) => {
+  const usedCi = new Set(members.map(m => m.ci));
+  for (let i = 0; i < PALETTE.length; i++) {
+    if (!usedCi.has(i)) return i;
+  }
+  const counts = Array(PALETTE.length).fill(0);
+  members.forEach(m => counts[m.ci % PALETTE.length]++);
+  return counts.indexOf(Math.min(...counts));
 };
 
 export default function App() {
@@ -113,7 +126,8 @@ export default function App() {
   };
 
   const addMember = async (name) => {
-    const nm = [...members, {id:`m${Date.now()}`,name,ci:members.length%PALETTE.length}];
+    const nextCi = getNextColorIndex(members);
+    const nm = [...members, {id:`m${Date.now()}`, name, ci: nextCi}];
     setMembers(nm); await persist("members", nm);
   };
 
@@ -184,9 +198,7 @@ export default function App() {
         textarea{color:#111!important;-webkit-text-fill-color:#111!important;background:#f8f8f8!important}
       `}</style>
 
-      {/* ─── Top Bar ─── */}
       <div style={{borderBottom:"1px solid #eee",padding:"0 12px",background:"#fff",position:"sticky",top:0,zIndex:100}}>
-        {/* Row 1: 로고 + 버튼들 */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",height:48,gap:6}}>
           <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
             <span style={{fontSize:16,flexShrink:0}}>🏥</span>
@@ -195,7 +207,6 @@ export default function App() {
               <div style={{fontSize:13,fontWeight:800,lineHeight:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{patient}님</div>
             </div>
           </div>
-
           <div style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
             <div style={{display:"flex",background:"#f4f4f4",borderRadius:8,padding:2,gap:1}}>
               {["week","month"].map(v=>(
@@ -208,15 +219,11 @@ export default function App() {
             <button onClick={()=>setSettingsOpen(true)} style={{width:28,height:28,border:"1px solid #eee",borderRadius:7,background:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>⚙</button>
           </div>
         </div>
-
-        {/* Row 2: 날짜 네비게이션 */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,paddingBottom:6}}>
           <button onClick={()=>nav(-1)} style={{width:26,height:26,border:"1px solid #eee",borderRadius:6,background:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>‹</button>
           <span style={{fontSize:13,fontWeight:700,color:"#222",minWidth:0,textAlign:"center"}}>{navTitle()}</span>
           <button onClick={()=>nav(1)} style={{width:26,height:26,border:"1px solid #eee",borderRadius:6,background:"#fff",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>›</button>
         </div>
-
-        {/* Row 3: 멤버 Pills */}
         <div style={{display:"flex",gap:5,paddingBottom:7,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
           <div style={{fontSize:10,color:syncing?"#f59e0b":"#1D9E75",display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
             <div style={{width:5,height:5,borderRadius:"50%",background:syncing?"#f59e0b":"#1D9E75"}}/>
@@ -235,7 +242,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* ─── Calendar ─── */}
       {view==="week"
         ? <WeekView dates={getWeekDates(cur)} todayKey={todayKey} dayEvents={dayEvents} members={members} getC={getC}
             onCellClick={(dk,h)=>setModal({type:"new",dateKey:dk,startH:h})}
@@ -292,7 +298,6 @@ function WeekView({dates, todayKey, dayEvents, members, getC, onCellClick, onEve
               </div>
             ))}
           </div>
-
           {dates.map((date,di)=>{
             const dk=toKey(date); const isToday=dk===todayKey;
             const evs=dayEvents(dk);
@@ -397,7 +402,6 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
         <div style={{display:"flex",justifyContent:"center",padding:"10px 0 0"}}>
           <div style={{width:36,height:4,borderRadius:2,background:"#e0e0e0"}}/>
         </div>
-
         <div style={{padding:"12px 18px 10px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
             <div style={{fontSize:11,color:"#999",marginBottom:1}}>{dateStr}</div>
@@ -405,9 +409,7 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
           </div>
           <button onClick={onClose} style={{width:28,height:28,border:"1px solid #eee",borderRadius:"50%",background:"#f8f8f8",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:"#555"}}>✕</button>
         </div>
-
         <div style={{padding:"14px 18px 32px"}}>
-          {/* 담당자 */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>담당자</div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -424,8 +426,6 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
               })}
             </div>
           </div>
-
-          {/* 시간 */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>시간</div>
             <div style={{display:"flex",alignItems:"center",gap:8,background:"#f4f4f4",borderRadius:12,padding:"10px 14px"}}>
@@ -448,8 +448,6 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
               <div style={{padding:"4px 8px",background:"#1D9E75",borderRadius:6,color:"#fff",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{endH-startH}시간</div>
             </div>
           </div>
-
-          {/* 주요 역할 */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>주요 역할</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
@@ -482,16 +480,12 @@ function EventModal({modal, members, getC, onSave, onDelete, onClose}) {
               </div>
             )}
           </div>
-
-          {/* 메모 */}
           <div style={{marginBottom:18}}>
             <div style={{fontSize:11,fontWeight:700,color:"#999",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.06em"}}>메모 / 인수인계</div>
             <textarea value={note} onChange={e=>setNote(e.target.value)}
               placeholder="투약 정보, 주의사항, 다음 교대에 전달할 내용…"
               rows={3} style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e0e0e0",borderRadius:10,fontSize:13,resize:"vertical",outline:"none",lineHeight:1.6,color:"#111",WebkitTextFillColor:"#111",background:"#f8f8f8"}}/>
           </div>
-
-          {/* Buttons */}
           <div style={{display:"flex",gap:8}}>
             {isEdit && (
               <button onClick={()=>onDelete(modal.dateKey,ev.id)}
